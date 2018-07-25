@@ -11,6 +11,7 @@ import sys
 import re
 import codecs
 import pandas as pd
+import pyltp
 from pyltp import Segmentor
 from pyltp import Postagger
 from pyltp import NamedEntityRecognizer
@@ -45,47 +46,62 @@ class preprosessing(object):
         self.stop_words = set(stop_words)
         self.tags_filter = tags
 
-    def segment(self, texts, postag=True, recognize=True, parse=True):
+    def segment(self, texts, use_tag_filter=True):
         # 初始化实例
+        # global word_list, netags, postags, relation, heads
+        words = []
+        pos = []
+        ner = []
+        rel = []
+        hea = []
+
         segmentor = Segmentor()
-        segmentor.load_with_lexicon(cws_model_path, self.dic_list)  # 加载模型，参数lexicon是自定义词典的文件路径
+        segmentor.load_with_lexicon(self.cws_model_path, './dict/user_recg.dic')  # 加载模型，参数是自定义词典的文件路径  self.dic_list
 
         postagger = Postagger()
         postagger.load(self.pos_model_path)
 
         recognizer = NamedEntityRecognizer()
-        recognizer.load(ner_model_path)
+        recognizer.load(self.ner_model_path)
 
         parser = Parser()
-        parser.load(pas_model_path)
+        parser.load(self.pas_model_path)
 
         for text in texts:
             text = text.lower()
 
             word_list = segmentor.segment(text)
             word_list = [word for word in word_list if len(word) > 1]
-            word_list = [word for word in word_list if re.match("[\u0041-\u005a\u4e00-\u9fa5]+", word) != None]  # .decode('utf8') 保留中英文
+            # word_list = [word for word in word_list if re.match("[\u0041-\u005a\u4e00-\u9fa5]+", word) != None]  # .decode('utf8') 保留中英文
             word_list = [word.strip() for word in word_list if word.strip() not in self.stop_words]  # 去除停用词
 
             # 词性标注
-            if postag:
-                posttags = postagger.postag(word_list)
-                postags = list(posttags)
+            posttags = postagger.postag(word_list)
+            postags = list(posttags)
 
             # NER识别
-            if recognize:
-                netags = recognizer.recognize(word_list, postags)
+            netags = recognizer.recognize(word_list, postags)
 
             # 句法分析
-            if parse:
-                arcs = parser.parse(word_list, postags)
-                rely_id = [arc.head for arc in arcs]  # 提取依存父节点id
-                relation = [arc.relation for arc in arcs]  # 提取依存关系
-                heads = ['Root' if id == 0 else word_list[id - 1] for id in rely_id]  # 匹配依存父节点词语
+            arcs = parser.parse(word_list, postags)
+            rely_id = [arc.head for arc in arcs]  # 提取依存父节点id
+            relation = [arc.relation for arc in arcs]  # 提取依存关系
+            heads = ['Root' if id == 0 else word_list[id - 1] for id in rely_id]  # 匹配依存父节点词语
+
+            if use_tag_filter:
+                dic = dict(zip(word_list, postags))
+                word_list = [x for x in dic.keys() if dic[x] in self.tags_filter]
+
+            words.append(word_list)
+            pos.append(postags)
+            ner.append(netags)
+            rel.append(relation)
+            hea.append(heads)
 
         segmentor.release()
         postagger.release()
         recognizer.release()
         parser.release()
-        return word_list, postags, netags, relation, heads
 
+        return words, pos, ner, rel, hea
+        # return word_list, postags, netags, relation, heads
